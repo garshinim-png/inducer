@@ -277,7 +277,7 @@
     <div class="brand-mark">i</div>
     <div class="brand-text"><b>The Inducer</b><span>by Entropix</span></div>
   </button>
-  <button class="topbar-cta" onclick="scrollToBand()">Talk to Entropix</button>
+  <button class="topbar-cta" onclick="scrollToBand(); trackEvent('cta_click',{cta:'topbar_talk_to_entropix'});">Talk to Entropix</button>
 </div>
 
 <div id="home-wrap" class="wrap">
@@ -306,8 +306,8 @@
     <h2>Know what to build. Don't want to build it yourself?</h2>
     <p>Entropix designs and ships production n8n workflows for teams across Malaysia — from a single automation to a fully connected back office. We also run hands-on workshops for individuals and companies.</p>
     <div class="hero-actions">
-      <a class="btn btn-cta" href="mailto:connect@entropix.pro?subject=Workflow%20automation%20help">Book a free workflow audit</a>
-      <a class="btn btn-ghost" href="mailto:connect@entropix.pro?subject=Team%20workshop%20request">Request a team workshop</a>
+      <a class="btn btn-cta" href="mailto:connect@entropix.pro?subject=Workflow%20automation%20help" onclick="trackEvent('cta_click',{cta:'band_audit'})">Book a free workflow audit</a>
+      <a class="btn btn-ghost" href="mailto:connect@entropix.pro?subject=Team%20workshop%20request" onclick="trackEvent('cta_click',{cta:'band_workshop'})">Request a team workshop</a>
     </div>
   </div>
 
@@ -874,7 +874,7 @@ async function loadProgress(){
 }
 async function toggleComplete(id){
   if(completed.includes(id)) completed=completed.filter(x=>x!==id);
-  else completed.push(id);
+  else { completed.push(id); trackEvent('module_complete', {module: id}); }
   try{ await window.storage.set('inducer-completed-modules', JSON.stringify(completed), false); }catch(e){}
   renderProgress();
   renderGrid();
@@ -915,6 +915,7 @@ function renderHeroGraphic(){
 let currentModule=null;
 function openModule(id){
   currentModule = MODULES.find(m=>m.id===id);
+  trackEvent('module_open', {module: id});
   document.getElementById('home-wrap').style.display='none';
   const dw=document.getElementById('detail-wrap');
   dw.style.display='block';
@@ -980,8 +981,8 @@ function renderDetailHtml(m){
         <h3>Entropix can build this exact workflow for your business — or train your team to build it themselves.</h3>
         <p>The JSON template above is a starting point. If you'd rather not configure credentials, edge cases and error-handling yourself, we implement it end-to-end against your actual tools and data — or run a hands-on workshop for your team.</p>
         <div class="hero-actions">
-          <a class="btn btn-cta" href="mailto:connect@entropix.pro?subject=Help%20with%3A%20${encodeURIComponent(m.title)}">Get help with this workflow</a>
-          <a class="btn btn-ghost" href="mailto:connect@entropix.pro?subject=Workshop%20request">Book a workshop</a>
+          <a class="btn btn-cta" href="mailto:connect@entropix.pro?subject=Help%20with%3A%20${encodeURIComponent(m.title)}" onclick="trackEvent('cta_click',{cta:'module_help', module:'${m.id}'})">Get help with this workflow</a>
+          <a class="btn btn-ghost" href="mailto:connect@entropix.pro?subject=Workshop%20request" onclick="trackEvent('cta_click',{cta:'module_workshop', module:'${m.id}'})">Book a workshop</a>
         </div>
       </div>
 
@@ -1002,6 +1003,7 @@ function renderMarkBtn(){
 
 /* ===================== JSON download / modal ===================== */
 function downloadJsonModule(id){
+  trackEvent('json_download', {module: id});
   const mod=MODULES.find(x=>x.id===id);
   const jsonStr=JSON.stringify(mod.workflowJson,null,2);
   try{
@@ -1017,6 +1019,7 @@ function downloadJsonModule(id){
 }
 let jsonModalModuleId=null;
 function openJsonModal(id){
+  trackEvent('json_view', {module: id});
   jsonModalModuleId=id;
   const mod=MODULES.find(x=>x.id===id);
   document.getElementById('json-modal-title').textContent = mod.title+' — '+id+'.json';
@@ -1051,7 +1054,62 @@ function showHome(){
 function scrollToGrid(){ document.getElementById('grid-anchor').scrollIntoView({behavior:'smooth'}); }
 function scrollToBand(){ document.getElementById('cta-band').scrollIntoView({behavior:'smooth'}); }
 
+/* ===================== analytics (off by default) =====================
+   To turn tracking on once this page is hosted on a real URL:
+   1) Pick ONE provider below and fill in your ID.
+      - Plausible (recommended): privacy-friendly, no cookie banner needed,
+        good fit alongside PDPA. Sign up at plausible.io, add your domain,
+        no numeric ID needed — just the exact domain string.
+      - GA4: free, more setup, needs a cookie-consent banner under PDPA
+        since it uses cookies. Get a Measurement ID (starts with "G-")
+        from analytics.google.com.
+   2) Set ANALYTICS.provider and ANALYTICS.id/domain below.
+   That's it — every module open, JSON download/copy, completion, and
+   CTA click below will start flowing into your dashboard automatically. */
+const ANALYTICS = {
+  provider: null,      // set to 'plausible' or 'ga4' to enable
+  domain: "teachlah.github.io",  // used by Plausible — your real hosted domain (GitHub Pages)
+  gaId: "G-XXXXXXXXXX" // used by GA4 — replace with your Measurement ID
+};
+
+function initAnalytics(){
+  if(ANALYTICS.provider === 'plausible'){
+    const s = document.createElement('script');
+    s.defer = true;
+    s.setAttribute('data-domain', ANALYTICS.domain);
+    s.src = 'https://plausible.io/js/script.tagged-events.js';
+    document.head.appendChild(s);
+  } else if(ANALYTICS.provider === 'ga4'){
+    const s1 = document.createElement('script');
+    s1.async = true;
+    s1.src = 'https://www.googletagmanager.com/gtag/js?id=' + ANALYTICS.gaId;
+    document.head.appendChild(s1);
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = function(){ window.dataLayer.push(arguments); };
+    window.gtag('js', new Date());
+    window.gtag('config', ANALYTICS.gaId);
+  }
+}
+
+// Call this anywhere you want an action logged — safe no-op until a
+// provider is configured above, so it's fine to leave these calls in place.
+function trackEvent(name, props){
+  props = props || {};
+  try{
+    if(ANALYTICS.provider === 'plausible' && window.plausible){
+      window.plausible(name, {props});
+    } else if(ANALYTICS.provider === 'plausible'){
+      // plausible.io script exposes window.plausible asynchronously;
+      // queue-safe fallback:
+      (window.plausible = window.plausible || function(){ (window.plausible.q = window.plausible.q || []).push(arguments); })(name, {props});
+    } else if(ANALYTICS.provider === 'ga4' && window.gtag){
+      window.gtag('event', name, props);
+    }
+  }catch(e){ /* never let analytics break the page */ }
+}
+
 /* ===================== init ===================== */
+initAnalytics();
 renderHeroGraphic();
 renderGrid();
 loadProgress();
